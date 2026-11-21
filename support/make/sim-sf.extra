@@ -84,12 +84,12 @@ else
 ifeq ($(findstring darwin, $(OSTYPE)), darwin)
   PLATFORM_FLAGS=-fPIC
   PLATFORM_CC_FLAGS=-bundle
-  SHARED_OBJECT=_TOSSIMmodule.so
+  SHARED_OBJECT=_TOSSIM.so
   PLATFORM_BUILD_FLAGS=-flat_namespace -undefined suppress 
   PLATFORM_LIB_FLAGS = -lstdc++ 
 else # linux
   PLATFORM_FLAGS=-shared -fPIC
-  SHARED_OBJECT=_TOSSIMmodule.so
+  SHARED_OBJECT=_TOSSIM.so
   PLATFORM_LIB_FLAGS = -lstdc++ 
   PLATFORM_BUILD_FLAGS= -shared -fPIC
 endif

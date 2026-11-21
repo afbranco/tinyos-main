@@ -46,6 +46,18 @@
 %module TOSSIM
 
 %{
+#if PY_MAJOR_VERSION >= 3
+#define TOSSIM_STR_CHECK(o) PyUnicode_Check(o)
+#define TOSSIM_STR_AS(o)    ((char*)PyUnicode_AsUTF8(o))
+#define TOSSIM_INT_FROM_LONG(v) PyLong_FromLong(v)
+#else
+#define TOSSIM_STR_CHECK(o) PyString_Check(o)
+#define TOSSIM_STR_AS(o)    PyString_AsString(o)
+#define TOSSIM_INT_FROM_LONG(v) PyInt_FromLong(v)
+#endif
+%}
+
+%{
 #include <memory.h>
 #include <tossim.h>
 
@@ -217,12 +229,12 @@ PyObject* valueFromScalar(char* type, char* ptr, int len) {
   int rval = memoryToPrimitive(type, ptr, &lval, &dval);
   switch(rval) {
     case PRIMITIVE_INTEGER:
-      return PyInt_FromLong(lval);
+      return TOSSIM_INT_FROM_LONG(lval);
     case PRIMITIVE_FLOAT:
       return PyFloat_FromDouble(dval);
     case PRIMITIVE_UNKNOWN:
     default:
-      return PyString_FromStringAndSize(ptr, len);
+      return PyBytes_FromStringAndSize(ptr, len);
   }
 }
 
@@ -239,6 +251,51 @@ PyObject* listFromArray(char* type, char* ptr, int len) {
 }
 %}
 
+
+/* Packet payloads are binary: in Python 3 take bytes (str would be UTF-8 encoded, changing
+   the length). Defined before packet.i, whose %apply copies it to (char *data, int len). */
+%typemap(in) (char *STRING, int LENGTH) {
+%#if PY_MAJOR_VERSION >= 3
+  if (PyBytes_Check($input)) {
+    $1 = PyBytes_AsString($input);
+    $2 = (int)PyBytes_Size($input);
+  }
+  else if (PyByteArray_Check($input)) {
+    $1 = PyByteArray_AsString($input);
+    $2 = (int)PyByteArray_Size($input);
+  }
+  else {
+    PyErr_SetString(PyExc_TypeError, "Requires bytes as a parameter.");
+    SWIG_fail;
+  }
+%#else
+  if (!PyString_Check($input)) {
+    PyErr_SetString(PyExc_TypeError, "Requires a string as a parameter.");
+    SWIG_fail;
+  }
+  $1 = PyString_AsString($input);
+  $2 = (int)PyString_Size($input);
+%#endif
+}
+/* The buffer belongs to the Python object: nothing to free. */
+%typemap(freearg) (char *STRING, int LENGTH) "";
+
+/* data() returns the payload, which is binary: in Python 3 give bytes of length(). Python 2
+   keeps the original behaviour (a C string, cut at the first zero byte). */
+%typemap(out) char* data {
+%#if PY_MAJOR_VERSION >= 3
+  $result = PyBytes_FromStringAndSize($1, arg1->length());
+%#else
+  if ($1) {
+    $result = PyString_FromString($1);
+  }
+  else {
+    Py_INCREF(Py_None);
+    $result = Py_None;
+  }
+%#endif
+}
+
 %include mac.i
 %include radio.i
 %include packet.i
@@ -249,11 +306,31 @@ PyObject* listFromArray(char* type, char* ptr, int len) {
 #if defined(SWIGPYTHON)
 
 %typemap(in) FILE * {
+%#if PY_MAJOR_VERSION >= 3
+  /* Python 3 file objects have no FILE*: wrap a dup() of the descriptor, once per fd.
+     sim_log drops duplicate outputs by fileno(), so a file added to several channels must
+     keep one descriptor (and removeChannel needs the same FILE* that addChannel stored). */
+  static FILE* tossim_fd_files[1024];
+  int fd = PyObject_AsFileDescriptor($input);
+  if (fd < 0 || fd >= 1024) {
+    PyErr_SetString(PyExc_TypeError, "Requires a file as a parameter.");
+    return NULL;
+  }
+  PyObject* flushed = PyObject_CallMethod($input, "flush", NULL);
+  Py_XDECREF(flushed);
+  PyErr_Clear();
+  if (tossim_fd_files[fd] == NULL) {
+    tossim_fd_files[fd] = fdopen(dup(fd), "a");
+    setvbuf(tossim_fd_files[fd], NULL, _IOLBF, 0);
+  }
+  $1 = tossim_fd_files[fd];
+%#else
   if (!PyFile_Check($input)) {
     PyErr_SetString(PyExc_TypeError, "Requires a file as a parameter.");
     return NULL;
   }
   $1 = PyFile_AsFile($input);
+%#endif
 }
 
 %typemap(out) variable_string_t {
@@ -301,16 +378,16 @@ PyObject* listFromArray(char* type, char* ptr, int len) {
       PyObject* name = PyList_GetItem($input, 3 * i);
       PyObject* array = PyList_GetItem($input, (3 * i) + 1);
       PyObject* format = PyList_GetItem($input, (3 * i) + 2);
-      if (PyString_Check(name) && PyString_Check(format)) {
-        app->variableNames[i] = PyString_AsString(name);
-        app->variableTypes[i] = PyString_AsString(format);
-        if (strcmp(PyString_AsString(array), "array") == 0) {
+      if (TOSSIM_STR_CHECK(name) && TOSSIM_STR_CHECK(format)) {
+        app->variableNames[i] = TOSSIM_STR_AS(name);
+        app->variableTypes[i] = TOSSIM_STR_AS(format);
+        if (strcmp(TOSSIM_STR_AS(array), "array") == 0) {
           app->variableArray[i] = 1;
-          //printf("%s is an array\n", PyString_AsString(name));
+          //printf("%s is an array\n", TOSSIM_STR_AS(name));
         }
         else {
           app->variableArray[i] = 0;
-          //printf("%s is a scalar\n", PyString_AsString(name));
+          //printf("%s is a scalar\n", TOSSIM_STR_AS(name));
         }
       }
       else {
@@ -325,7 +402,7 @@ PyObject* listFromArray(char* type, char* ptr, int len) {
 
 #endif
 
-typedef struct var_string {
+typedef struct variable_string {
   char* type;
   char* ptr;
   int len;

@@ -35,5 +35,7 @@
 #
 # $Id: generate-swig.bash,v 1.5 2010-06-29 22:07:51 scipio Exp $
 
-swig -shadow -python -c++ tossim.i
+# SWIG 4 (tested with 4.0.2): the output works with Python 2.7 and Python 3.
+swig -python -c++ tossim.i
+(cd sf && swig -python -c++ -I.. tossim.i)
 
