@@ -38,8 +38,8 @@ import sys, stat, struct, subprocess, time, os.path
 try:
     import tos
 except ImportError:
-    import posix
-    sys.path = [os.path.join(posix.environ['TOSROOT'], 'support', 'sdk', 'python')] + sys.path
+    # os.environ: on Python 3 posix.environ has bytes keys, so 'TOSROOT' is not found there
+    sys.path = [os.path.join(os.environ['TOSROOT'], 'support', 'sdk', 'python')] + sys.path
     import tos
 from datetime import datetime
 
