@@ -39,13 +39,19 @@ packets using the serial format from T2 (TEP113) and a second one that
 tries to simplifies the work with arbitrary packets.
 """
 
+from __future__ import print_function
 import sys, struct, time, socket, operator, os
 import traceback
 
+try:
+    long
+except NameError:  # Python 3
+    long = int
+
 try: 
     import serial
-except ImportError, e: 
-    print "Please install PySerial first."
+except ImportError as e: 
+    print("Please install PySerial first.")
     sys.exit(1)
 
 __version__ = "$Id: tos.py,v 1.12 2010-06-29 22:07:42 scipio Exp $"
@@ -82,14 +88,14 @@ def getSource(comm):
         try:
             return Serial(params[0], int(params[1]), flush=True, debug=debug)
         except:
-            print "ERROR: Unable to initialize a serial connection to", comm
+            print("ERROR: Unable to initialize a serial connection to", comm)
             raise Exception
     elif source[0] == 'network':
         try:
             return SerialMIB600(params[0], int(params[1]), debug=debug)
         except:
-            print "ERROR: Unable to initialize a network connection to", comm
-            print "ERROR:", traceback.format_exc()
+            print("ERROR: Unable to initialize a network connection to", comm)
+            print("ERROR:", traceback.format_exc())
             raise Exception
     raise Exception
 
@@ -108,7 +114,7 @@ class Serial:
         self._s = serial.Serial(port, int(baudrate), rtscts=0, timeout=0.5)
         self._s.flushInput()
         if flush:
-            print >>sys.stdout, "Flushing the serial port",
+            sys.stdout.write("Flushing the serial port")
             endtime = time.time() + 1
             while time.time() < endtime:
                 self._s.read()
@@ -120,7 +126,7 @@ class Serial:
 
     def getByte(self):
         c = self._s.read()
-        if c == '':
+        if not c:  # '' in Python 2, b'' in Python 3
             raise Timeout
         #print 'Serial:getByte: 0x%02x' % ord(c)
         return ord(c)
@@ -145,14 +151,14 @@ class SerialMIB600:
         self._ts = None
         self._s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._s.connect((host, port))
-        print "Connected"
+        print("Connected")
 
     def getByte(self):
         try:
             c = self._s.recv(1)
         except socket.timeout:
             c = ''
-        if c == '':
+        if not c:  # '' in Python 2, b'' in Python 3
             raise Timeout
         #print 'Serial:getByte: 0x%02x' % ord(c)
         return ord(c)
@@ -267,7 +273,7 @@ class HDLC:
             packet_crc = self._decode(packet[-3:-1])
 
             if crc != packet_crc:
-                print "Warning: wrong CRC! %x != %x %s" % (crc, packet_crc, ["%2x" % i for i in packet])
+                print("Warning: wrong CRC! %x != %x %s" % (crc, packet_crc, ["%2x" % i for i in packet]))
             if not self._s._ts:
                 self._s._ts = ts
             self.log("Serial:_read: %.4f (%.4f) Recv: %s" % (ts, ts - self._s._ts, self._format(packet[1:-3])))
@@ -368,7 +374,7 @@ class HDLC:
 
     def log(self, s):
         if self._s.debug:
-            print s
+            print(s)
 
 class SimpleAM(object):
     def __init__(self, source, oobHook=None):
@@ -403,7 +409,7 @@ class SimpleAM(object):
                 if self.oobHook:
                     self.oobHook(ActiveMessage(NoAckDataFrame(f)))
                 else:
-                    print 'SimpleAM:write: skip', ack, f
+                    print('SimpleAM:write: skip', ack, f)
                 f = self._hdlc.read(self._source.ackTimeout)
                 if f == None:
                     #print "Ack Timeout!"
@@ -425,7 +431,7 @@ def printfHook(packet):
         s = "".join([chr(i) for i in packet.data]).strip('\0')
         lines = s.split('\n')
         for line in lines:
-            if line: print "PRINTF:", line
+            if line: print("PRINTF:", line)
         packet = None # No further processing for the printf packet
     return packet    
 
@@ -445,7 +451,7 @@ class AM(SimpleAM):
                     try:
                         s = getSource(os.environ['MOTECOM'])
                     except:
-                        print "ERROR: Please indicate a way to connect to the mote"
+                        print("ERROR: Please indicate a way to connect to the mote")
                         sys.exit(-1)
         if oobHook == None:
             oobHook = printfHook
@@ -616,6 +622,7 @@ class Packet:
 
     def __nonzero__(self):
         return True;
+    __bool__ = __nonzero__  # Python 3
 
     # Implement the map behavior
     def __getitem__(self, key):

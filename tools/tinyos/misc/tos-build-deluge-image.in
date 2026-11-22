@@ -34,6 +34,7 @@
 # @author Chieh-Jan Mike Liang <cliang4@cs.jhu.edu>
 
 import sys, struct, operator
+from functools import reduce
 from xml.dom.minidom import parse
 
 DELUGE_PKTS_PER_PAGE = 48
@@ -59,7 +60,7 @@ def encode(val, dim):
   return output
 
 def int2byte(v):
-    return "".join([struct.pack("B", i) for i in v])
+    return bytes(bytearray(v))  # str in Python 2, bytes in Python 3
 
 def crc16(data):
   crc = 0
@@ -78,7 +79,7 @@ def pages(data):
   if l % DELUGE_BYTES_PER_PAGE != 0:
     sys.stderr.write("ERROR: Bug in padding!")
     sys.exit()
-  return l / DELUGE_BYTES_PER_PAGE
+  return l // DELUGE_BYTES_PER_PAGE
 
 def align(data):
   mod = len(data) % DELUGE_BYTES_PER_PAGE
@@ -192,5 +193,5 @@ if len(padding) < DELUGE_BYTES_PER_PAGE:
   all_data += padding
 all_data = deluge_crc(all_data)
 ident['size'] = DELUGE_IDENT_SIZE + len(all_data)
-sys.stdout.write(int2byte(deluge_ident(all_data)) + int2byte(all_data))
+getattr(sys.stdout, 'buffer', sys.stdout).write(int2byte(deluge_ident(all_data)) + int2byte(all_data))
 

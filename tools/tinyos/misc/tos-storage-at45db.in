@@ -7,6 +7,7 @@
 # Intel Research Berkeley, 2150 Shattuck Avenue, Suite 1300, Berkeley, CA, 
 # 94704.  Attention:  Intel License Inquiry.
 
+from __future__ import print_function
 from xml.dom import *
 from xml.dom.minidom import *
 from re import match
@@ -14,13 +15,12 @@ from sys import *
 from subprocess import Popen, PIPE
 
 from getopt import *
-import string
-import commands
+import os
 #New way of handling arguments........
 try:
   opts, args = getopt(argv[1:], "ts:f:", [])
-except GetoptError, err:
-  print str(err) # will print something like "option -a not recognized"
+except GetoptError as err:
+  print(str(err)) # will print something like "option -a not recognized"
   stderr.write("Usage: tos-storage-at45db [-t] [-s <sector size>] [-f <flash size in sectors>] <platform directory>\n")
   
 sector_size = 256
@@ -53,6 +53,7 @@ def nfail(s):
   exit(2)
 
 volumes = {}
+volumeOrder = [] # volume names in definition order
 volmap = []
 volumeNames = []
 volumeTypes = dict()
@@ -68,7 +69,7 @@ def check_volume(name, base, size):
       nfail("invalid base for volume %s" % name)
     if (base & (sector_size - 1)) != 0:
       nfail("base of volume %s is not a multiple of %d" % (name, sector_size))
-    base /= sector_size
+    base //= sector_size
 
   try:
     size = int(size)
@@ -76,14 +77,15 @@ def check_volume(name, base, size):
     nfail("invalid size for volume %s" % name)
   if (size & (sector_size - 1)) != 0:
     nfail("size of volume %s is not a multiple of %d" % (name, sector_size))
-  size /= sector_size
+  size //= sector_size
 
   name = name.upper()
-  if volumes.has_key(name):
+  if name in volumes:
     nfail("duplicate definition of volume %s" % name)
   if not match("^[a-zA-Z0-9_]+$", name):
     nfail("invalid volume name %s" % name)
   volumes[name] = (base, size)
+  volumeOrder.append(name)
 
 def allocate_at(name, base, size):
   # check for overlap of existing allocations
@@ -131,7 +133,7 @@ def expand_path(path):
       elif c == 'P':
         sub = platformdir
       elif c == 'T':
-        sub = Popen(["ncc", "-print-tosdir"], stdout=PIPE).communicate()[0]
+        sub = Popen(["ncc", "-print-tosdir"], stdout=PIPE, universal_newlines=True).communicate()[0]
         sub = sub[:-1] # remove newline
       else:
         nfail("unknown include-path substitution character " + c)
@@ -154,8 +156,8 @@ def volumeparse(file, fname, depth):
     name = volume.getAttribute("name")
     size = volume.getAttribute("size")
     base = volume.getAttribute("base")
-    type = string.lower(volume.getAttribute("type"))
-    isCircular = string.upper(volume.getAttribute("circular"))
+    type = volume.getAttribute("type").lower()
+    isCircular = volume.getAttribute("circular").upper()
     if isCircular == "":
       isCircular = "FALSE"
     if name == None:
@@ -179,14 +181,52 @@ def volumeparse(file, fname, depth):
 
 volumeparse(stdin, "(standard input)", 0)
 
+# Python 2 allocated the volumes in its dict order. Keep that order, so that the flash
+# layout (and so compatibility with motes and images built before) does not change.
+def py2_dict_order(keys):
+  """Return keys (distinct ASCII strings, in insertion order) in the order Python 2.7
+  iterates a dict built by inserting them, so that volumes keep the flash layout
+  that the Python 2 version of this script produced."""
+  M = (1 << 64) - 1
+  def h(s):  # Python 2 string hash (no -R), as an unsigned 64-bit value
+    if not s:
+      return 0
+    x = (ord(s[0]) << 7) & M
+    for c in s:
+      x = ((1000003 * x) & M) ^ ord(c)
+    x ^= len(s)
+    return (M - 1) if x == M else x  # hash -1 becomes -2
+  def insert(table, k):
+    mask = len(table) - 1
+    hk = h(k); i = hk & mask; perturb = hk
+    while table[i] is not None:
+      i = ((i << 2) + i + perturb + 1) & M; perturb >>= 5
+      i &= mask
+    table[i] = k
+  table = [None] * 8
+  used = 0
+  for k in keys:
+    insert(table, k); used += 1
+    if used * 3 >= len(table) * 2:  # dict resize: fill*3 >= size*2, to 4*used
+      size = 8
+      while size <= 4 * used:
+        size <<= 1
+      old, table = table, [None] * size
+      for o in old:
+        if o is not None:
+          insert(table, o)
+  return [k for k in table if k is not None]
+
+allocationOrder = py2_dict_order(volumeOrder)
+
 # allocate fixed-address volumes
-for name in volumes.keys():
+for name in allocationOrder:
   (base, size) = volumes[name]
   if base != None:
     allocate_at(name, base, size)
 
 # allocate movable volumes
-for name in volumes.keys():
+for name in allocationOrder:
   (base, size) = volumes[name]
   if base == None:
     allocate(name, size)
@@ -200,31 +240,31 @@ if lastbase + lastsize > flash_size:
         ((lastbase + lastsize) * sector_size, flash_size * sector_size))
 
 # print some code
-print "#ifndef STORAGE_VOLUMES_H"
-print "#define STORAGE_VOLUMES_H"
-print
-print "enum {"
+print("#ifndef STORAGE_VOLUMES_H")
+print("#define STORAGE_VOLUMES_H")
+print()
+print("enum {")
 for (vname, vbase, vsize) in volmap:
-  print "  VOLUME_%s, " % vname
-print "};"
-print
-print "#endif"
+  print("  VOLUME_%s, " % vname)
+print("};")
+print()
+print("#endif")
 
-print "#if defined(VS)"
+print("#if defined(VS)")
 for (vname, vbase, vsize) in volmap:
-  print "VS(VOLUME_%s, %d)" % (vname, vsize)
-print "#undef VS"
-print "#endif"
+  print("VS(VOLUME_%s, %d)" % (vname, vsize))
+print("#undef VS")
+print("#endif")
 
-print "#if defined(VB)"
+print("#if defined(VB)")
 for (vname, vbase, vsize) in volmap:
-  print "VB(VOLUME_%s, %d)" % (vname, vbase)
-print "#undef VB"
-print "#endif"
+  print("VB(VOLUME_%s, %d)" % (vname, vbase))
+print("#undef VB")
+print("#endif")
 
 # output nc file for threads
 if cthreads == True:
-  outFile = open(commands.getstatusoutput("pwd")[1] + "/VolumeMapC.nc", "w")
+  outFile = open(os.getcwd() + "/VolumeMapC.nc", "w")
   outFile.write("#include \"StorageVolumes.h\" \n")
   outFile.write("\n")
   outFile.write("configuration VolumeMapC { \n")

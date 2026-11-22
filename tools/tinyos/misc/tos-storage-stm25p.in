@@ -45,6 +45,7 @@
 # $Date: 2009-10-28 04:19:20 $
 #
                                   
+from __future__ import print_function
 from re import match
 from sys import *
 from xml.dom import *
@@ -53,12 +54,12 @@ from subprocess import Popen, PIPE
 
 from getopt import *
 import string
-import commands
+import os
 #New way of handling arguments........
 try:
   opts, args = getopt(argv[1:], "ts:", [])
-except GetoptError, err:
-  print str(err) # will print something like "option -a not recognized"
+except GetoptError as err:
+  print(str(err)) # will print something like "option -a not recognized"
   stderr.write( "Usage: tos-storage-stm25p [-t] [-s number of sectors] <platform directory>\n" )
   
 if len( args ) == 1:
@@ -107,7 +108,7 @@ def expand_path( path ):
       elif c == 'P':
         sub = platformdir
       elif c == 'T':
-        sub = Popen( ["ncc", "-print-tosdir"], stdout=PIPE ).communicate( )[0]
+        sub = Popen( ["ncc", "-print-tosdir"], stdout=PIPE, universal_newlines=True ).communicate( )[0]
         sub = sub[:-1] # remove newline
       else:
         nfail( "unknown include-path substitution character " + c )
@@ -141,8 +142,8 @@ def volumeparse( file, fname, depth ):
       name = volume.getAttribute( "name" )
       size = volume.getAttribute( "size" )
       base = volume.getAttribute( "base" )
-      type = string.lower(volume.getAttribute("type"))
-      isCircular = string.upper(volume.getAttribute("circular"))
+      type = volume.getAttribute("type").lower()
+      isCircular = volume.getAttribute("circular").upper()
       if isCircular == "":
           isCircular = "FALSE"
       
@@ -150,7 +151,7 @@ def volumeparse( file, fname, depth ):
           error_exit( "volume has no name" )
       elif not match( "^[a-zA-Z0-9_]+$", name ):
           error_exit( "volume has invalid name '%s'" % name )
-      elif volumes.has_key( name ):
+      elif name in volumes:
           error_exit( "duplicate volume definition '%s'" % name )
       else:
           volumes[ name ] = "blah"
@@ -174,15 +175,15 @@ def volumeparse( file, fname, depth ):
                       ( name, SECTOR_SIZE ) )
 
       volumeNames.append( "VOLUME_" + name )
-      volumeSizes.append( size / SECTOR_SIZE )
+      volumeSizes.append( size // SECTOR_SIZE )
       volumeTypes["VOLUME_" + name] = type
       volumeOptions["VOLUME_" + name] = isCircular
       
       if base == "":
           volumeOffsets.append( -1 )
       else:
-          base = base / SECTOR_SIZE
-          size = size / SECTOR_SIZE
+          base = base // SECTOR_SIZE
+          size = size // SECTOR_SIZE
           volumeOffsets.append( base )
           for i in range( size ):
               freeSectors[ i + base ] = False
@@ -218,29 +219,29 @@ for i in range( len( volumeOffsets ) ):
 
 # output C file
 
-print "#ifndef __STORAGE_VOLUME_H__"
-print "#define __STORAGE_VOLUME_H__"
-print ""
-print "#include \"Stm25p.h\""
-print ""
+print("#ifndef __STORAGE_VOLUME_H__")
+print("#define __STORAGE_VOLUME_H__")
+print("")
+print("#include \"Stm25p.h\"")
+print("")
 
 for i in range( len( volumeNames ) ):
-    print "#define %s %d" % ( volumeNames[ i ], i )
-print ""
+    print("#define %s %d" % ( volumeNames[ i ], i ))
+print("")
         
-print "static const stm25p_volume_info_t STM25P_VMAP[ %d ] = {" % \
-      len( volumeNames )
+print("static const stm25p_volume_info_t STM25P_VMAP[ %d ] = {" % \
+      len( volumeNames ))
 for i in range( len( volumeNames ) ):
-    print "    { base : %d, size : %d }," % \
-          ( volumeOffsets[ i ], volumeSizes[ i ] )
-print "};"
+    print("    { base : %d, size : %d }," % \
+          ( volumeOffsets[ i ], volumeSizes[ i ] ))
+print("};")
 
-print ""
-print "#endif"
+print("")
+print("#endif")
 
 # output nc file for threads
 if cthreads == True:
-  outFile = open(commands.getstatusoutput("pwd")[1] + "/VolumeMapC.nc", "w")
+  outFile = open(os.getcwd() + "/VolumeMapC.nc", "w")
   outFile.write("#include \"StorageVolumes.h\" \n")
   outFile.write("\n")
   outFile.write("configuration VolumeMapC { \n")

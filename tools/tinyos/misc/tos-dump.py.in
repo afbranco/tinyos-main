@@ -1,11 +1,16 @@
 #!@pathpython@
 
-import sys
-import tos
+from __future__ import print_function
+import sys, os
+try:
+    import tos
+except ImportError:
+    sys.path.insert(0, os.path.join(os.environ['TOSROOT'], 'support', 'sdk', 'python'))
+    import tos
 
 if '-h' in sys.argv:
-    print "Usage:", sys.argv[0], "serial@/dev/ttyUSB0:57600"
-    print "      ", sys.argv[0], "network@host:port"
+    print("Usage:", sys.argv[0], "serial@/dev/ttyUSB0:57600")
+    print("      ", sys.argv[0], "network@host:port")
     sys.exit()
 
 am = tos.AM()
@@ -13,5 +18,5 @@ am = tos.AM()
 while True:
     p = am.read()
     if p:
-	print p
+        print(p)
 
