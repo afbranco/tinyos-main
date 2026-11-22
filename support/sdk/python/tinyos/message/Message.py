@@ -45,7 +45,8 @@ class Message:
             self.data_length = data_length
 
             if data == None or len(data) != data_length:
-                self.data = chr(0) * data_length
+                # bytes, so that Python 3 works too (in Python 2, b"" is str: unchanged).
+                self.data = b"\0" * data_length
 
         else:
             self.data_length = len(data)
